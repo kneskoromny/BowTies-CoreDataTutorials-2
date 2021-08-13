@@ -47,6 +47,7 @@ class ViewController: UIViewController {
 
   // MARK: - Properties
     var managedContext: NSManagedObjectContext!
+  var currentBowTie: BowTie!
   
   // MARK: - View Life Cycle
   override func viewDidLoad() {
@@ -71,6 +72,7 @@ class ViewController: UIViewController {
        let results = try managedContext.fetch(request)
    // выводим на экран первый элемент массива
        if let tie = results.first {
+        currentBowTie = tie
          populate(bowtie: tie)
        }
      } catch let error as NSError {
@@ -82,15 +84,54 @@ class ViewController: UIViewController {
   // MARK: - IBActions
 
   @IBAction func segmentedControl(_ sender: UISegmentedControl) {
-    // Add code here
+    // title каждого сегмента в segmented control соответствует определенному атрибуту tie’s searchKey в plist. Берем название выбранного в данный момент сегмента и выберите подходящий галстук-бабочку, используя хорошо продуманный NSPredicate.
+    guard let selectedValue = sender.titleForSegment(at: sender.selectedSegmentIndex) else {
+          return
+    }
+      let request: NSFetchRequest<BowTie> = BowTie.fetchRequest()
+      request.predicate = NSPredicate(
+        format: "%K = %@",
+        argumentArray: [#keyPath(BowTie.searchKey), selectedValue])
+      do {
+        let results = try managedContext.fetch(request)
+        currentBowTie = results.first
+        populate(bowtie: currentBowTie)
+      } catch let error as NSError {
+        print("Could not fetch \(error), \(error.userInfo)")
+    }
   }
 
   @IBAction func wear(_ sender: UIButton) {
-    // Add code here
+    currentBowTie.timesWorn += 1
+    currentBowTie.lastWorn = Date()
+    
+    do {
+      try managedContext.save()
+      populate(bowtie: currentBowTie)
+    } catch let error as NSError {
+      print("Could not fetch \(error), \(error.userInfo)")
+    }
   }
 
   @IBAction func rate(_ sender: UIButton) {
-    // Add code here
+    let alert = UIAlertController(title: "New Rating",
+                                    message: "Rate this bow tie",
+                                    preferredStyle: .alert)
+      alert.addTextField { textField in
+        textField.keyboardType = .decimalPad
+    }
+      let cancelAction = UIAlertAction(title: "Cancel",
+                                       style: .cancel)
+      let saveAction = UIAlertAction(
+        title: "Save",
+        style: .default
+        ) { [unowned self] _ in
+          if let textField = alert.textFields?.first {
+            self.update(rating: textField.text)
+    } }
+      alert.addAction(cancelAction)
+      alert.addAction(saveAction)
+      present(alert, animated: true)
   }
   
   // загружаем данные из plist в Core Data
@@ -162,6 +203,26 @@ class ViewController: UIViewController {
     favoriteLabel.isHidden = !bowtie.isFavourite
     view.tintColor = tintColor
   }
+  
+  // обновляет рейтинг и сохраняет контекст, в случае неверного значения рейтинга заново инициирует нажатие кнопки и показ алерт контроллера
+  func update(rating: String?) {
+    guard let ratingString = rating, let rating = Double(ratingString) else { return }
+    
+    do {
+      currentBowTie.rating = rating
+      try managedContext.save()
+      populate(bowtie: currentBowTie)
+    } catch let error as NSError {
+      // Когда возникает ошибка NSError, стандартной практикой является проверка домена и кода на наличие ошибки, чтобы определить, что пошло не так.
+      if error.domain == NSCocoaErrorDomain &&
+            (error.code == NSValidationNumberTooLargeError ||
+              error.code == NSValidationNumberTooSmallError) {
+        // заново запускаем нажатие кнопки
+            rate(rateButton)
+          } else {
+            print("Could not save \(error), \(error.userInfo)")
+      }
+  } }
 }
 
 //расширение для работы с цветом
